@@ -4,39 +4,43 @@ import android.content.Context
 import java.security.MessageDigest
 import java.util.UUID
 
+
 object DeviceFingerprint {
 
-    private const val PREFS_NAME = "device_prefs"
-    private const val INSTALL_ID_KEY = "install_id"
-
-    fun getFingerprintHash(context: Context): String {
+    fun getHash(context: Context): String {
 
         val preferences = context.getSharedPreferences(
-            PREFS_NAME,
+            "device_fingerprint",
             Context.MODE_PRIVATE
         )
 
-        var installId = preferences.getString(
-            INSTALL_ID_KEY,
+        var installationId = preferences.getString(
+            "installation_id",
             null
         )
 
-        if (installId == null) {
-            installId = UUID.randomUUID().toString()
+        if (installationId == null) {
+
+            installationId = UUID.randomUUID().toString()
 
             preferences
                 .edit()
-                .putString(INSTALL_ID_KEY, installId)
+                .putString(
+                    "installation_id",
+                    installationId
+                )
                 .apply()
         }
 
-        return sha256(installId)
+        return sha256(installationId)
     }
+
 
     private fun sha256(value: String): String {
 
-        val digest = MessageDigest.getInstance("SHA-256")
-        val bytes = digest.digest(value.toByteArray())
+        val bytes = MessageDigest
+            .getInstance("SHA-256")
+            .digest(value.toByteArray())
 
         return bytes.joinToString("") {
             "%02x".format(it)

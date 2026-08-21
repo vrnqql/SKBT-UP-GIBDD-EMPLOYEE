@@ -14,6 +14,7 @@ import com.example.gibdd_ochevidec.ui.screens.common.LoadingScreen
 import com.example.gibdd_ochevidec.ui.screens.common.WaitingRoleScreen
 import com.example.gibdd_ochevidec.ui.theme.GIBDD_OchevidecTheme
 
+
 private enum class AppScreen {
     LOADING,
     WAITING_ROLE,
@@ -21,57 +22,88 @@ private enum class AppScreen {
     CHAT
 }
 
+
 class MainActivity : ComponentActivity() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    override fun onCreate(
+        savedInstanceState: Bundle?
+    ) {
+
         super.onCreate(savedInstanceState)
 
         enableEdgeToEdge()
+
 
         setContent {
 
             GIBDD_OchevidecTheme {
 
+
                 var currentScreen by remember {
-                    mutableStateOf(AppScreen.LOADING)
+                    mutableStateOf(
+                        AppScreen.LOADING
+                    )
                 }
+
+
+                var registeredDeviceId by remember {
+                    mutableStateOf("")
+                }
+
 
                 var selectedChatId by remember {
                     mutableStateOf("")
                 }
 
+
                 var selectedChatName by remember {
                     mutableStateOf("")
                 }
 
-                // Локальные псевдонимы
+
+                // =================================================
+                // ЛОКАЛЬНЫЕ ПСЕВДОНИМЫ
+                // =================================================
+
                 val aliasPreferences = remember {
+
                     getSharedPreferences(
                         "chat_aliases",
                         MODE_PRIVATE
                     )
                 }
 
+
                 var aliases by remember {
 
                     val loadedAliases =
-                        aliasPreferences.all
+                        aliasPreferences
+                            .all
                             .filterKeys {
-                                it.startsWith("alias_")
+                                it.startsWith(
+                                    "alias_"
+                                )
                             }
                             .mapKeys {
-                                it.key.removePrefix("alias_")
+                                it.key.removePrefix(
+                                    "alias_"
+                                )
                             }
                             .mapValues {
                                 it.value.toString()
                             }
 
-                    mutableStateOf(loadedAliases)
+
+                    mutableStateOf(
+                        loadedAliases
+                    )
                 }
 
-                // Пока это локальная имитация бана.
-                // Потом список будет приходить с backend.
+
+                // Пока локальная имитация блокировки.
+                // Позже будет backend.
                 var hiddenChatIds by remember {
+
                     mutableStateOf<Set<String>>(
                         emptySet()
                     )
@@ -80,21 +112,60 @@ class MainActivity : ComponentActivity() {
 
                 when (currentScreen) {
 
+
+                    // =========================================
+                    // РЕГИСТРАЦИЯ
+                    // =========================================
+
                     AppScreen.LOADING -> {
 
                         LoadingScreen(
-                            onFinished = {
-                                currentScreen =
-                                    AppScreen.WAITING_ROLE
+
+                            onRegistered = {
+                                    deviceId,
+                                    role ->
+
+
+                                registeredDeviceId =
+                                    deviceId
+
+
+                                // Если роли пока нет,
+                                // показываем QR.
+                                if (role == null) {
+
+                                    currentScreen =
+                                        AppScreen.WAITING_ROLE
+
+                                } else {
+
+                                    // Если роль уже есть,
+                                    // сразу открываем чаты.
+                                    currentScreen =
+                                        AppScreen.CHATS
+                                }
                             }
                         )
                     }
 
 
+                    // =========================================
+                    // ОЖИДАНИЕ РОЛИ
+                    // =========================================
+
                     AppScreen.WAITING_ROLE -> {
 
                         WaitingRoleScreen(
+
+                            deviceId =
+                                registeredDeviceId,
+
                             onRoleAssigned = {
+
+                                // Пока временный переход.
+                                // Следующим этапом здесь
+                                // подключим GET /employee/me
+
                                 currentScreen =
                                     AppScreen.CHATS
                             }
@@ -102,15 +173,27 @@ class MainActivity : ComponentActivity() {
                     }
 
 
+                    // =========================================
+                    // СПИСОК ЧАТОВ
+                    // =========================================
+
                     AppScreen.CHATS -> {
 
                         ChatsScreen(
-                            hiddenChatIds = hiddenChatIds,
+
+                            hiddenChatIds =
+                                hiddenChatIds,
+
                             aliases = aliases,
-                            onChatClick = { id, name ->
+
+                            onChatClick = {
+                                    id,
+                                    name ->
+
 
                                 selectedChatId = id
                                 selectedChatName = name
+
 
                                 currentScreen =
                                     AppScreen.CHAT
@@ -119,21 +202,32 @@ class MainActivity : ComponentActivity() {
                     }
 
 
+                    // =========================================
+                    // ОТКРЫТЫЙ ЧАТ
+                    // =========================================
+
                     AppScreen.CHAT -> {
 
                         ChatScreen(
-                            chatId = selectedChatId,
-                            chatName = selectedChatName,
+
+                            chatId =
+                                selectedChatId,
+
+                            chatName =
+                                selectedChatName,
+
 
                             onBackClick = {
+
                                 currentScreen =
                                     AppScreen.CHATS
                             },
 
-                            onAliasChanged = { newAlias ->
 
-                                // Сохраняем псевдоним
-                                // только на этом устройстве
+                            onAliasChanged = {
+                                    newAlias ->
+
+
                                 aliasPreferences
                                     .edit()
                                     .putString(
@@ -142,21 +236,26 @@ class MainActivity : ComponentActivity() {
                                     )
                                     .apply()
 
+
                                 aliases =
                                     aliases + (
-                                            selectedChatId to newAlias
+                                            selectedChatId
+                                                    to newAlias
                                             )
 
-                                selectedChatName = newAlias
+
+                                selectedChatName =
+                                    newAlias
                             },
+
 
                             onBlockConfirmed = {
 
-                                // Для Инспектора чат после
-                                // бана скрывается из списка
+
                                 hiddenChatIds =
                                     hiddenChatIds +
                                             selectedChatId
+
 
                                 currentScreen =
                                     AppScreen.CHATS

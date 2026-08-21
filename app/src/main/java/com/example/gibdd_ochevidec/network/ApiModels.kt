@@ -2,6 +2,12 @@ package com.example.gibdd_ochevidec.network
 
 import com.google.gson.annotations.SerializedName
 
+
+data class HealthResponse(
+    val status: String
+)
+
+
 data class RegisterDeviceRequest(
     @SerializedName("fingerprint_hash")
     val fingerprintHash: String,
@@ -9,6 +15,7 @@ data class RegisterDeviceRequest(
     @SerializedName("push_token")
     val pushToken: String? = null
 )
+
 
 data class RegisterDeviceResponse(
     @SerializedName("device_id")
@@ -18,8 +25,4 @@ data class RegisterDeviceResponse(
 
     @SerializedName("access_token")
     val accessToken: String
-)
-
-data class HealthResponse(
-    val status: String
 )
