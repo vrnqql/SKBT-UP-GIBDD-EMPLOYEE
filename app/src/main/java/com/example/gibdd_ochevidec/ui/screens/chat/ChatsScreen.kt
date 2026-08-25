@@ -2,8 +2,10 @@ package com.example.gibdd_ochevidec.ui.screens.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -14,11 +16,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -31,6 +35,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.gibdd_ochevidec.ui.components.AppBottomNavigation
+import com.example.gibdd_ochevidec.ui.components.MainTab
 import com.example.gibdd_ochevidec.ui.theme.Commissioner
 
 
@@ -40,15 +46,25 @@ data class ChatItem(
     val message: String,
     val time: String,
     val unreadCount: Int = 0,
-    val isCar: Boolean = false
+    val isCar: Boolean = false,
+    val isBanned: Boolean = false
 )
 
 
 @Composable
 fun ChatsScreen(
-    hiddenChatIds: Set<String> = emptySet(),
+    chats: List<ChatItem> = emptyList(),
     aliases: Map<String, String> = emptyMap(),
-    onChatClick: (String, String) -> Unit = { _, _ -> }
+
+    showEmployeesTab: Boolean = false,
+    showNotificationsTab: Boolean = false,
+    showReportsTab: Boolean = false,
+
+    onChatClick: (String, String) -> Unit = { _, _ -> },
+
+    onEmployeesClick: () -> Unit = {},
+    onNotificationsClick: () -> Unit = {},
+    onReportsClick: () -> Unit = {}
 ) {
 
     val backgroundColor = Color(0xFFF5F8FD)
@@ -56,50 +72,8 @@ fun ChatsScreen(
     val grayText = Color(0xFF555B6B)
     val blue = Color(0xFF087CF0)
 
-    val chats = listOf(
-        ChatItem(
-            id = "1",
-            name = "Белая LADA",
-            message = "Белая LADA едет в сторону центра города.",
-            time = "18:42",
-            unreadCount = 2,
-            isCar = true
-        ),
 
-        ChatItem(
-            id = "18472",
-            name = "Очевидец 18472",
-            message = "Нарушение ПДД на перекрестке Ленина и Советской.",
-            time = "18:31"
-        ),
-
-        ChatItem(
-            id = "19231",
-            name = "Очевидец 19231",
-            message = "ДТП без пострадавших, нужна помощь",
-            time = "17:58"
-        ),
-
-        ChatItem(
-            id = "17711",
-            name = "Очевидец 17711",
-            message = "Стоит по встречной на парковке.",
-            time = "17:42"
-        ),
-
-        ChatItem(
-            id = "20394",
-            name = "Очевидец 20394",
-            message = "Очень опасное вождение на трассе.",
-            time = "15:49"
-        )
-    )
-
-    val visibleChats = chats.filterNot { chat ->
-        chat.id in hiddenChatIds
-    }
-
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(backgroundColor)
@@ -107,62 +81,122 @@ fun ChatsScreen(
     ) {
 
         Column(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
         ) {
 
-            Column(
+            Spacer(
+                modifier = Modifier.height(36.dp)
+            )
+
+
+            Text(
+                text = "Чаты",
+                fontFamily = Commissioner,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 23.sp,
+                color = darkText,
+                modifier = Modifier.padding(
+                    horizontal = 28.dp
+                )
+            )
+
+
+            Spacer(
+                modifier = Modifier.height(30.dp)
+            )
+
+
+            LazyColumn(
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 28.dp)
+                    .fillMaxWidth()
+                    .weight(1f),
+
+                contentPadding = PaddingValues(
+                    start = 28.dp,
+                    end = 28.dp,
+                    bottom = 20.dp
+                ),
+
+                verticalArrangement =
+                    Arrangement.spacedBy(12.dp)
             ) {
 
-                Spacer(
-                    modifier = Modifier.height(36.dp)
-                )
+                if (chats.isEmpty()) {
 
-                Text(
-                    text = "Чаты",
-                    fontFamily = Commissioner,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 23.sp,
-                    color = darkText
-                )
+                    item {
 
-                Spacer(
-                    modifier = Modifier.height(30.dp)
-                )
+                        Text(
+                            text = "Новых обращений пока нет",
+                            fontFamily = Commissioner,
+                            fontSize = 14.sp,
+                            color = grayText
+                        )
+                    }
 
-                visibleChats.forEachIndexed { index, chat ->
+                } else {
 
-                    val displayChat = chat.copy(
-                        name = aliases[chat.id] ?: chat.name
-                    )
-
-                    ChatCard(
-                        chat = displayChat,
-                        darkText = darkText,
-                        grayText = grayText,
-                        blue = blue,
-                        onClick = {
-                            onChatClick(
-                                displayChat.id,
-                                displayChat.name
-                            )
+                    itemsIndexed(
+                        items = chats,
+                        key = { _, chat ->
+                            chat.id
                         }
-                    )
+                    ) { _, chat ->
 
-                    if (index != visibleChats.lastIndex) {
-                        Spacer(
-                            modifier = Modifier.height(12.dp)
+                        val displayChat =
+                            chat.copy(
+                                name =
+                                    aliases[chat.id]
+                                        ?: chat.name
+                            )
+
+
+                        ChatCard(
+                            chat = displayChat,
+                            darkText = darkText,
+                            grayText = grayText,
+                            blue = blue,
+
+                            onClick = {
+
+                                onChatClick(
+                                    displayChat.id,
+                                    displayChat.name
+                                )
+                            }
                         )
                     }
                 }
             }
-
-            BottomChatNavigation(
-                blue = blue
-            )
         }
+
+
+        AppBottomNavigation(
+            selectedTab = MainTab.CHATS,
+
+            showEmployees =
+                showEmployeesTab,
+
+            showNotifications =
+                showNotificationsTab,
+
+            showReports =
+                showReportsTab,
+
+            onChatsClick = {
+                // Уже на вкладке "Чаты"
+            },
+
+            onEmployeesClick =
+                onEmployeesClick,
+
+            onNotificationsClick =
+                onNotificationsClick,
+
+            onReportsClick =
+                onReportsClick
+        )
     }
 }
 
@@ -179,14 +213,23 @@ private fun ChatCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(88.dp)
+            .height(
+                if (chat.isBanned) {
+                    100.dp
+                } else {
+                    88.dp
+                }
+            )
             .clickable {
                 onClick()
             },
+
         shape = RoundedCornerShape(18.dp),
+
         colors = CardDefaults.cardColors(
             containerColor = Color.White
         ),
+
         elevation = CardDefaults.cardElevation(
             defaultElevation = 2.dp
         )
@@ -199,38 +242,99 @@ private fun ChatCard(
                     start = 17.dp,
                     end = 16.dp
                 ),
-            verticalAlignment = Alignment.CenterVertically
+
+            verticalAlignment =
+                Alignment.CenterVertically
         ) {
 
+
             if (chat.isCar) {
+
                 CarPlaceholder()
+
             } else {
+
                 PersonAvatar(
                     blue = blue
                 )
             }
 
+
             Spacer(
                 modifier = Modifier.width(15.dp)
             )
+
 
             Column(
                 modifier = Modifier.weight(1f)
             ) {
 
-                Text(
-                    text = chat.name,
-                    fontFamily = Commissioner,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    color = darkText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment =
+                        Alignment.CenterVertically
+                ) {
+
+                    Text(
+                        text = chat.name,
+                        fontFamily = Commissioner,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = darkText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+
+                        modifier = Modifier.weight(
+                            weight = 1f,
+                            fill = false
+                        )
+                    )
+
+
+                    if (chat.isBanned) {
+
+                        Spacer(
+                            modifier = Modifier.width(6.dp)
+                        )
+
+
+                        Icon(
+                            imageVector =
+                                Icons.Default.Block,
+
+                            contentDescription =
+                                "Заблокирован",
+
+                            tint =
+                                Color(0xFFD34A4A),
+
+                            modifier =
+                                Modifier.size(15.dp)
+                        )
+                    }
+                }
+
+
+                if (chat.isBanned) {
+
+                    Spacer(
+                        modifier = Modifier.height(3.dp)
+                    )
+
+
+                    Text(
+                        text = "Пользователь заблокирован",
+                        fontFamily = Commissioner,
+                        fontSize = 10.sp,
+                        color = Color(0xFFD34A4A),
+                        maxLines = 1
+                    )
+                }
+
 
                 Spacer(
                     modifier = Modifier.height(6.dp)
                 )
+
 
                 Text(
                     text = chat.message,
@@ -238,14 +342,24 @@ private fun ChatCard(
                     fontSize = 12.sp,
                     lineHeight = 15.sp,
                     color = grayText,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+
+                    maxLines =
+                        if (chat.isBanned) {
+                            1
+                        } else {
+                            2
+                        },
+
+                    overflow =
+                        TextOverflow.Ellipsis
                 )
             }
+
 
             Spacer(
                 modifier = Modifier.width(8.dp)
             )
+
 
             Column(
                 modifier = Modifier
@@ -254,19 +368,24 @@ private fun ChatCard(
                         top = 15.dp,
                         bottom = 14.dp
                     ),
-                horizontalAlignment = Alignment.End
+
+                horizontalAlignment =
+                    Alignment.End
             ) {
 
                 Text(
                     text = chat.time,
                     fontFamily = Commissioner,
-                    fontSize = 10.sp,
-                    color = grayText
+                    fontSize = 9.sp,
+                    color = grayText,
+                    maxLines = 1
                 )
+
 
                 Spacer(
                     modifier = Modifier.weight(1f)
                 )
+
 
                 if (chat.unreadCount > 0) {
 
@@ -277,11 +396,16 @@ private fun ChatCard(
                                 color = blue,
                                 shape = CircleShape
                             ),
-                        contentAlignment = Alignment.Center
+
+                        contentAlignment =
+                            Alignment.Center
                     ) {
 
                         Text(
-                            text = chat.unreadCount.toString(),
+                            text =
+                                chat.unreadCount
+                                    .toString(),
+
                             fontFamily = Commissioner,
                             fontSize = 12.sp,
                             color = Color.White
@@ -306,14 +430,22 @@ private fun PersonAvatar(
                 color = Color(0xFFF1F7FF),
                 shape = CircleShape
             ),
-        contentAlignment = Alignment.Center
+
+        contentAlignment =
+            Alignment.Center
     ) {
 
         Icon(
-            imageVector = Icons.Default.Person,
-            contentDescription = "Очевидец",
+            imageVector =
+                Icons.Default.Person,
+
+            contentDescription =
+                "Очевидец",
+
             tint = blue,
-            modifier = Modifier.size(30.dp)
+
+            modifier =
+                Modifier.size(30.dp)
         )
     }
 }
@@ -329,52 +461,14 @@ private fun CarPlaceholder() {
                 color = Color(0xFFE8EDF3),
                 shape = CircleShape
             ),
-        contentAlignment = Alignment.Center
+
+        contentAlignment =
+            Alignment.Center
     ) {
 
         Text(
             text = "🚗",
             fontSize = 25.sp
         )
-    }
-}
-
-
-@Composable
-private fun BottomChatNavigation(
-    blue: Color
-) {
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(72.dp)
-            .background(Color.White),
-        contentAlignment = Alignment.Center
-    ) {
-
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-
-            Icon(
-                imageVector = Icons.Outlined.ChatBubbleOutline,
-                contentDescription = "Чаты",
-                tint = blue,
-                modifier = Modifier.size(25.dp)
-            )
-
-            Spacer(
-                modifier = Modifier.height(4.dp)
-            )
-
-            Text(
-                text = "Чаты",
-                fontFamily = Commissioner,
-                fontWeight = FontWeight.Medium,
-                fontSize = 11.sp,
-                color = blue
-            )
-        }
     }
 }

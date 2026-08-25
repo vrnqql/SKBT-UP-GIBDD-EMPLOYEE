@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,6 +50,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.lazy.itemsIndexed
+import com.example.gibdd_ochevidec.utils.formatMessageDateDivider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -60,18 +61,41 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.gibdd_ochevidec.ui.theme.Commissioner
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
+import android.widget.MediaController
+import android.widget.VideoView
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.example.gibdd_ochevidec.network.RetrofitClient
+import okhttp3.Headers
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 
 data class ChatMessageUi(
     val id: String,
     val text: String,
     val time: String,
-    val isEmployee: Boolean
-)
+    val createdAt: String,
+    val isEmployee: Boolean,
+    val messageType: String,
+    val mediaMimeType: String? = null,
 
+    val staticLatitude: Double? = null,
+    val staticLongitude: Double? = null,
+
+    val liveLocationEndsAt: String? = null
+)
 
 private val ReplyTemplates = listOf(
     "Уточните марку автомобиля.",
@@ -90,6 +114,7 @@ fun ChatScreen(
     chatName: String = "Белая LADA",
     chatId: String = "18472",
     messages: List<ChatMessageUi> = emptyList(),
+    authorization: String = "",
     onBackClick: () -> Unit = {},
     onTemplateSend: (String) -> Unit = {},
     onAliasChanged: (String) -> Unit = {},
@@ -276,18 +301,61 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
 
-                items(
+                itemsIndexed(
                     items = displayedMessages,
-                    key = { message ->
+                    key = { _, message ->
                         message.id
                     }
-                ) { message ->
+                ) { index, message ->
 
-                    ChatMessageCard(
-                        message = message,
-                        darkText = darkText,
-                        grayText = grayText
-                    )
+                    val currentDate =
+                        formatMessageDateDivider(
+                            message.createdAt
+                        )
+
+                    val previousDate =
+                        if (index > 0) {
+
+                            formatMessageDateDivider(
+                                displayedMessages[
+                                    index - 1
+                                ].createdAt
+                            )
+
+                        } else {
+
+                            null
+                        }
+
+
+                    Column {
+
+                        // Показываем разделитель только
+                        // перед первым сообщением новой даты
+                        if (
+                            currentDate.isNotBlank() &&
+                            currentDate != previousDate
+                        ) {
+
+                            MessageDateDivider(
+                                text = currentDate,
+                                grayText = grayText
+                            )
+
+                            Spacer(
+                                modifier =
+                                    Modifier.height(12.dp)
+                            )
+                        }
+
+
+                        ChatMessageCard(
+                            message = message,
+                            darkText = darkText,
+                            grayText = grayText,
+                            authorization = authorization
+                        )
+                    }
                 }
             }
 
@@ -381,21 +449,6 @@ fun ChatScreen(
                         text = template,
                         darkText = darkText,
                         onClick = {
-
-                            val currentTime =
-                                SimpleDateFormat(
-                                    "HH:mm",
-                                    Locale.getDefault()
-                                ).format(Date())
-
-                            displayedMessages.add(
-                                ChatMessageUi(
-                                    id = System.currentTimeMillis().toString(),
-                                    text = template,
-                                    time = currentTime,
-                                    isEmployee = true
-                                )
-                            )
 
                             onTemplateSend(template)
 
@@ -714,12 +767,51 @@ private fun ReplyTemplateCard(
     }
 }
 
+@Composable
+private fun MessageDateDivider(
+    text: String,
+    grayText: Color
+) {
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(),
+        contentAlignment =
+            Alignment.Center
+    ) {
+
+        Box(
+            modifier = Modifier
+                .background(
+                    color =
+                        Color(0xFFE7EDF4),
+                    shape =
+                        RoundedCornerShape(
+                            14.dp
+                        )
+                )
+                .padding(
+                    horizontal = 14.dp,
+                    vertical = 6.dp
+                )
+        ) {
+
+            Text(
+                text = text,
+                fontFamily = Commissioner,
+                fontSize = 11.sp,
+                color = grayText
+            )
+        }
+    }
+}
 
 @Composable
 private fun ChatMessageCard(
     message: ChatMessageUi,
     darkText: Color,
-    grayText: Color
+    grayText: Color,
+    authorization: String
 ) {
 
     Row(
@@ -734,7 +826,7 @@ private fun ChatMessageCard(
 
         Card(
             modifier = Modifier.widthIn(
-                min = 120.dp,
+                min = 155.dp,
                 max = 310.dp
             ),
             shape = RoundedCornerShape(18.dp),
@@ -750,35 +842,434 @@ private fun ChatMessageCard(
 
             Column(
                 modifier = Modifier.padding(
-                    start = 18.dp,
-                    end = 14.dp,
-                    top = 14.dp,
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = 12.dp,
                     bottom = 10.dp
                 )
             ) {
 
-                Text(
-                    text = message.text,
-                    fontFamily = Commissioner,
-                    fontSize = 13.sp,
-                    lineHeight = 17.sp,
-                    color = darkText
-                )
+                when {
+
+                    message.messageType == "MEDIA" &&
+                            message.mediaMimeType
+                                ?.startsWith("image/") == true -> {
+
+                        MediaImage(
+                            messageId = message.id,
+                            authorization = authorization
+                        )
+                    }
+
+
+                    message.messageType == "MEDIA" &&
+                            message.mediaMimeType
+                                ?.startsWith("video/") == true -> {
+
+                        MediaVideo(
+                            messageId = message.id,
+                            authorization = authorization
+                        )
+                    }
+
+
+                    message.messageType == "STATIC_LOCATION" -> {
+
+                        StaticLocationMessage(
+                            latitude = message.staticLatitude,
+                            longitude = message.staticLongitude,
+                            darkText = darkText,
+                            grayText = grayText
+                        )
+                    }
+
+
+                    message.messageType == "LIVE_LOCATION" -> {
+
+                        LiveLocationMessage(
+                            messageId = message.id,
+                            authorization = authorization,
+                            endsAt = message.liveLocationEndsAt,
+                            darkText = darkText,
+                            grayText = grayText
+                        )
+                    }
+
+
+                    else -> {
+
+                        Text(
+                            text =
+                                if (message.text.isNotBlank()) {
+                                    message.text
+                                } else {
+                                    message.messageType
+                                },
+                            fontFamily = Commissioner,
+                            fontSize = 13.sp,
+                            lineHeight = 17.sp,
+                            color = darkText
+                        )
+                    }
+                }
+
 
                 Spacer(
-                    modifier = Modifier.height(7.dp)
+                    modifier = Modifier.height(8.dp)
                 )
 
-                Text(
-                    text = message.time,
-                    fontFamily = Commissioner,
-                    fontSize = 10.sp,
-                    color = grayText,
-                    modifier = Modifier.align(
-                        Alignment.End
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+
+                    Text(
+                        text = message.time,
+                        fontFamily = Commissioner,
+                        fontSize = 10.sp,
+                        color = grayText
                     )
-                )
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun MediaImage(
+    messageId: String,
+    authorization: String
+) {
+
+    val context = LocalContext.current
+
+    val mediaUrl =
+        "${RetrofitClient.BASE_URL}" +
+                "api/v1/messages/$messageId/media"
+
+
+    val headers =
+        Headers.Builder()
+            .add(
+                "Authorization",
+                authorization
+            )
+            .add(
+                "X-Client-App",
+                "employee"
+            )
+            .build()
+
+
+    AsyncImage(
+        model =
+            ImageRequest.Builder(context)
+                .data(mediaUrl)
+                .headers(headers)
+                .crossfade(true)
+                .build(),
+
+        contentDescription =
+            "Фотография очевидца",
+
+        contentScale =
+            ContentScale.Crop,
+
+        modifier = Modifier
+            .width(240.dp)
+            .height(280.dp)
+            .background(
+                color = Color(0xFFF1F3F6),
+                shape = RoundedCornerShape(12.dp)
+            )
+    )
+}
+
+@Composable
+private fun MediaVideo(
+    messageId: String,
+    authorization: String
+) {
+
+    val mediaUrl =
+        "${RetrofitClient.BASE_URL}" +
+                "api/v1/messages/$messageId/media"
+
+
+    AndroidView(
+        modifier = Modifier
+            .width(240.dp)
+            .height(280.dp)
+            .background(
+                Color(0xFF111111),
+                RoundedCornerShape(12.dp)
+            ),
+
+        factory = { context ->
+
+            VideoView(context).apply {
+
+                val controller =
+                    MediaController(context)
+
+                controller.setAnchorView(this)
+
+                setMediaController(
+                    controller
+                )
+
+
+                val headers =
+                    mapOf(
+                        "Authorization" to
+                                authorization,
+
+                        "X-Client-App" to
+                                "employee"
+                    )
+
+
+                setVideoURI(
+                    Uri.parse(mediaUrl),
+                    headers
+                )
+
+
+                setOnPreparedListener {
+
+                    // Показываем первый кадр,
+                    // но видео само не запускаем.
+                    seekTo(1)
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun StaticLocationMessage(
+    latitude: Double?,
+    longitude: Double?,
+    darkText: Color,
+    grayText: Color
+) {
+
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier.width(220.dp)
+    ) {
+
+        Text(
+            text = "📍 Геопозиция",
+            fontFamily = Commissioner,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+            color = darkText
+        )
+
+        Spacer(
+            modifier = Modifier.height(6.dp)
+        )
+
+        if (
+            latitude != null &&
+            longitude != null
+        ) {
+
+            Text(
+                text = "$latitude, $longitude",
+                fontFamily = Commissioner,
+                fontSize = 11.sp,
+                color = grayText
+            )
+
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
+
+            Text(
+                text = "Открыть на карте",
+                fontFamily = Commissioner,
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                color = Color(0xFF087CF0),
+
+                modifier = Modifier.clickable {
+
+                    val uri =
+                        Uri.parse(
+                            "geo:$latitude,$longitude" +
+                                    "?q=$latitude,$longitude"
+                        )
+
+                    val intent =
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            uri
+                        )
+
+                    runCatching {
+                        context.startActivity(intent)
+                    }
+                }
+            )
+
+        } else {
+
+            Text(
+                text = "Координаты недоступны",
+                fontFamily = Commissioner,
+                fontSize = 11.sp,
+                color = grayText
+            )
+        }
+    }
+}
+
+@Composable
+private fun LiveLocationMessage(
+    messageId: String,
+    authorization: String,
+    endsAt: String?,
+    darkText: Color,
+    grayText: Color
+) {
+
+    val context = LocalContext.current
+
+    var latitude by remember(messageId) {
+        mutableStateOf<Double?>(null)
+    }
+
+    var longitude by remember(messageId) {
+        mutableStateOf<Double?>(null)
+    }
+
+
+    LaunchedEffect(
+        messageId,
+        authorization
+    ) {
+
+        while (true) {
+
+            runCatching {
+
+                RetrofitClient
+                    .apiService
+                    .liveLocationPoints(
+                        messageId = messageId,
+                        authorization = authorization
+                    )
+
+            }.onSuccess { response ->
+
+                val lastPoint =
+                    response.points.lastOrNull()
+
+                latitude =
+                    lastPoint?.latitude
+
+                longitude =
+                    lastPoint?.longitude
+            }
+
+
+            // Обновляем live-точку
+            // каждые 5 секунд
+            delay(5000)
+        }
+    }
+
+
+    Column(
+        modifier = Modifier.width(220.dp)
+    ) {
+
+        Text(
+            text = "📍 Геопозиция в реальном времени",
+            fontFamily = Commissioner,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
+            color = darkText
+        )
+
+
+        Spacer(
+            modifier = Modifier.height(7.dp)
+        )
+
+
+        if (
+            latitude != null &&
+            longitude != null
+        ) {
+
+            Text(
+                text =
+                    "${latitude}, ${longitude}",
+                fontFamily = Commissioner,
+                fontSize = 11.sp,
+                color = grayText
+            )
+
+
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
+
+
+            Text(
+                text = "Открыть на карте",
+                fontFamily = Commissioner,
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                color = Color(0xFF087CF0),
+
+                modifier = Modifier.clickable {
+
+                    val lat =
+                        latitude
+                            ?: return@clickable
+
+                    val lon =
+                        longitude
+                            ?: return@clickable
+
+
+                    val uri =
+                        Uri.parse(
+                            "geo:$lat,$lon" +
+                                    "?q=$lat,$lon"
+                        )
+
+
+                    val intent =
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            uri
+                        )
+
+
+                    runCatching {
+                        context.startActivity(
+                            intent
+                        )
+                    }
+                }
+            )
+
+        } else {
+
+            Text(
+                text = "Ожидаем координаты…",
+                fontFamily = Commissioner,
+                fontSize = 11.sp,
+                color = grayText
+            )
         }
     }
 }
