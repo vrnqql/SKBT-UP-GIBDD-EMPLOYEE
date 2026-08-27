@@ -69,6 +69,18 @@ import com.example.gibdd_ochevidec.ui.screens.notifications.NotificationItem
 import com.example.gibdd_ochevidec.ui.screens.notifications.NotificationsScreen
 import com.example.gibdd_ochevidec.ui.screens.employees.DeleteRoleConfirmationScreen
 import com.example.gibdd_ochevidec.ui.screens.employees.RoleErrorScreen
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import com.example.gibdd_ochevidec.network.RealtimeClient
+import org.json.JSONObject
+import android.util.Log
+import com.google.firebase.messaging.FirebaseMessaging
+import androidx.compose.runtime.DisposableEffect
+import com.example.gibdd_ochevidec.ui.screens.notifications.NotificationStore
+import androidx.compose.runtime.collectAsState
 
 
 private enum class AppScreen {
@@ -99,6 +111,15 @@ private enum class AppScreen {
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+
+        const val NOTIFICATION_CHANNEL_ID =
+            "employee_notifications"
+
+        const val NOTIFICATION_PERMISSION_REQUEST_CODE =
+            1001
+    }
+
     override fun onCreate(
         savedInstanceState: Bundle?
     ) {
@@ -107,10 +128,49 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
 
+        createNotificationChannel()
+
+        requestNotificationPermission()
 
         setContent {
 
             GIBDD_OchevidecTheme {
+
+                var firebaseToken by remember {
+                    mutableStateOf<String?>(null)
+                }
+
+                LaunchedEffect(Unit) {
+
+                    FirebaseMessaging
+                        .getInstance()
+                        .token
+                        .addOnSuccessListener { token ->
+
+                            firebaseToken = token
+
+                            Log.d(
+                                "FCM",
+                                "FCM token получен"
+                            )
+                        }
+                        .addOnFailureListener { error ->
+
+                            Log.e(
+                                "FCM",
+                                "Не удалось получить FCM token",
+                                error
+                            )
+                        }
+                }
+
+                var realtimeRefreshTick by remember {
+                    mutableIntStateOf(0)
+                }
+
+                var selectedEmployeeLastActivity by remember {
+                    mutableStateOf<String?>(null)
+                }
 
                 var roleFailureReason by remember {
                     mutableStateOf(
@@ -126,22 +186,38 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf<String?>(null)
                 }
 
-                var notifications by remember {
-                    mutableStateOf<List<NotificationItem>>(
-                        emptyList()
-                    )
-                }
+                val notificationStore =
+                    remember {
+
+                        NotificationStore
+                            .getInstance(
+                                applicationContext
+                            )
+                    }
+
+                val notifications by
+                notificationStore
+                    .notifications
+                    .collectAsState()
 
                 val scope =
                     rememberCoroutineScope()
 
+                val realtimeClient =
+                    remember {
+                        RealtimeClient()
+                    }
+
+                DisposableEffect(Unit) {
+
+                    onDispose {
+
+                        realtimeClient.disconnect()
+                    }
+                }
+
                 val context =
                     LocalContext.current
-
-
-                // =========================================
-                // ОСНОВНЫЕ СОСТОЯНИЯ
-                // =========================================
 
                 var currentScreen by remember {
                     mutableStateOf(
@@ -156,11 +232,49 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                LaunchedEffect(
+                    session?.accessToken
+                ) {
+
+                    val activeSession =
+                        session
+
+                    if (activeSession != null) {
+
+                        realtimeClient.connect(
+                            accessToken =
+                                activeSession.accessToken,
+
+                            onMessage = { event ->
+
+                                val eventType =
+                                    runCatching {
+
+                                        JSONObject(event)
+                                            .optString("event")
+
+                                    }.getOrNull()
+
+
+                                if (
+                                    eventType ==
+                                    "message_created"
+                                ) {
+
+                                    scope.launch {
+
+                                        realtimeRefreshTick++
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+
 
                 var registrationAttempt by remember {
                     mutableIntStateOf(0)
                 }
-
 
                 var errorText by remember {
                     mutableStateOf("")
@@ -174,11 +288,6 @@ class MainActivity : ComponentActivity() {
                             applicationContext
                         )
                     }
-
-
-                // =========================================
-                // ЧАТЫ
-                // =========================================
 
                 var selectedChatId by remember {
                     mutableStateOf("")
@@ -213,6 +322,13 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
+                val outgoingMessagePreferences =
+                    remember {
+                        getSharedPreferences(
+                            "outgoing_messages",
+                            MODE_PRIVATE
+                        )
+                    }
 
                 var aliases by remember {
 
@@ -236,11 +352,6 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-
-                // =========================================
-                // СОТРУДНИКИ
-                // =========================================
-
                 var employees by remember {
                     mutableStateOf<List<EmployeeItem>>(
                         emptyList()
@@ -253,11 +364,6 @@ class MainActivity : ComponentActivity() {
                         null
                     )
                 }
-
-
-                // =========================================
-                // РОЛИ
-                // =========================================
 
                 var selectedNewRole by remember {
                     mutableStateOf<String?>(
@@ -317,7 +423,10 @@ class MainActivity : ComponentActivity() {
                                     request =
                                         RegisterDeviceRequest(
                                             fingerprintHash =
-                                                fingerprint
+                                                fingerprint,
+
+                                            pushToken =
+                                                firebaseToken
                                         )
                                 )
 
@@ -338,6 +447,8 @@ class MainActivity : ComponentActivity() {
                                 accessToken =
                                     response.accessToken
                             )
+
+
 
 
                         currentScreen =
@@ -371,14 +482,89 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                LaunchedEffect(
+                    firebaseToken,
+                    session?.deviceId
+                ) {
 
-                // =========================================
-                // ОЖИДАНИЕ РОЛИ
-                // =========================================
+                    val token =
+                        firebaseToken
+
+                    val activeSession =
+                        session
+
+
+                    if (
+                        token != null &&
+                        activeSession != null
+                    ) {
+
+                        try {
+
+                            val fingerprint =
+                                DeviceFingerprint
+                                    .getFingerprintHash(
+                                        applicationContext
+                                    )
+
+
+                            val response =
+                                RetrofitClient
+                                    .apiService
+                                    .registerDevice(
+
+                                        request =
+                                            RegisterDeviceRequest(
+                                                fingerprintHash =
+                                                    fingerprint,
+
+                                                pushToken =
+                                                    token
+                                            )
+                                    )
+
+
+                            sessionStore.save(
+                                response
+                            )
+
+
+                            session =
+                                EmployeeSession(
+                                    deviceId =
+                                        response.deviceId,
+
+                                    role =
+                                        response.role,
+
+                                    accessToken =
+                                        response.accessToken
+                                )
+
+
+                            Log.d(
+                                "FCM",
+                                "push_token успешно отправлен на backend"
+                            )
+
+
+                        } catch (
+                            error: Exception
+                        ) {
+
+                            Log.e(
+                                "FCM",
+                                "Не удалось отправить push_token на backend",
+                                error
+                            )
+                        }
+                    }
+                }
 
                 LaunchedEffect(
                     currentScreen,
-                    session?.accessToken
+                    session?.accessToken,
+                    realtimeRefreshTick
                 ) {
 
                     val activeSession =
@@ -444,11 +630,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-
-
-                // =========================================
-                // СПИСОК ЧАТОВ
-                // =========================================
 
                 LaunchedEffect(
                     currentScreen,
@@ -546,15 +727,18 @@ class MainActivity : ComponentActivity() {
 
                                             unreadCount =
                                                 if (
-                                                    summary
-                                                        .lastDeliveredAt ==
-                                                    null
+                                                    summary.lastDeliveredAt == null &&
+                                                    summary.lastMessageId !=
+                                                    outgoingMessagePreferences
+                                                        .getString(
+                                                            "last_outgoing_${summary.observerDeviceId}",
+                                                            null
+                                                        )
                                                 ) {
                                                     1
                                                 } else {
                                                     0
                                                 },
-
 
                                             isBanned =
                                                 summary
@@ -589,15 +773,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-
-                // =========================================
-                // СООБЩЕНИЯ ОТКРЫТОГО ЧАТА
-                // =========================================
-
                 LaunchedEffect(
                     currentScreen,
                     selectedChatId,
-                    session?.deviceId
+                    session?.deviceId,
+                    realtimeRefreshTick
                 ) {
 
                     val activeSession =
@@ -719,11 +899,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-
-                // =========================================
-                // СПИСОК СОТРУДНИКОВ
-                // =========================================
-
                 LaunchedEffect(
                     currentScreen,
                     session?.accessToken
@@ -810,11 +985,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-
-                // =========================================
-                // НАВИГАЦИЯ
-                // =========================================
-
                 when (
                     currentScreen
                 ) {
@@ -848,11 +1018,6 @@ class MainActivity : ComponentActivity() {
                                     .orEmpty()
                         )
                     }
-
-
-                    // =====================================
-                    // ЧАТЫ
-                    // =====================================
 
                     AppScreen.CHATS -> {
 
@@ -913,11 +1078,6 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
-
-
-                    // =====================================
-                    // ОТКРЫТЫЙ ЧАТ
-                    // =====================================
 
                     AppScreen.CHAT -> {
 
@@ -1065,6 +1225,13 @@ class MainActivity : ComponentActivity() {
                                                             )
                                                     )
 
+                                            outgoingMessagePreferences
+                                                .edit()
+                                                .putString(
+                                                    "last_outgoing_$selectedChatId",
+                                                    sent.messageId
+                                                )
+                                                .apply()
 
                                             if (
                                                 chatMessages
@@ -1104,11 +1271,6 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
-
-
-                    // =====================================
-                    // СОТРУДНИКИ
-                    // =====================================
 
                     AppScreen.EMPLOYEES -> {
 
@@ -1163,20 +1325,16 @@ class MainActivity : ComponentActivity() {
                                 },
 
 
-                                onEmployeeClick = {
-                                        employee ->
-
+                                onEmployeeClick = { employee ->
 
                                     scannedEmployeeDevice =
                                         EmployeeDeviceResponse(
-
-                                            deviceId =
-                                                employee.deviceId,
-
-                                            role =
-                                                employee.role
+                                            deviceId = employee.deviceId,
+                                            role = employee.role
                                         )
 
+                                    selectedEmployeeLastActivity =
+                                        employee.lastActivity
 
                                     currentScreen =
                                         AppScreen.EMPLOYEE_DEVICE
@@ -1196,12 +1354,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-
-                    // =====================================
-                    // УВЕДОМЛЕНИЯ
-                    // ПОКА ВЕРСТКУ ЕЩЁ НЕ ПОДКЛЮЧАЛИ
-                    // =====================================
-
                     AppScreen.NOTIFICATIONS -> {
 
                         if (session?.role == "CHIEF") {
@@ -1211,6 +1363,23 @@ class MainActivity : ComponentActivity() {
                                 notifications =
                                     notifications,
 
+                                onNotificationClick = {
+                                        observerDeviceId ->
+
+                                    selectedChatId =
+                                        observerDeviceId
+
+                                    selectedChatName =
+                                        aliases[
+                                            observerDeviceId
+                                        ]
+                                            ?: "Очевидец ${
+                                                observerDeviceId.take(8)
+                                            }"
+
+                                    currentScreen =
+                                        AppScreen.CHAT
+                                },
 
                                 onChatsClick = {
 
@@ -1396,11 +1565,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-
-                    // =====================================
-                    // УСТРОЙСТВО СОТРУДНИКА
-                    // =====================================
-
                     AppScreen.EMPLOYEE_DEVICE -> {
 
                         val device =
@@ -1413,37 +1577,30 @@ class MainActivity : ComponentActivity() {
 
                             EmployeeDeviceScreen(
 
-                                onDeleteRoleClick = {
-
-                                    deleteRoleErrorText = null
-
-                                    currentScreen =
-                                        AppScreen.ROLE_DELETE_CONFIRM
-                                },
-
                                 deviceId =
                                     device.deviceId,
-
 
                                 role =
                                     device.role,
 
+                                lastActivity =
+                                    selectedEmployeeLastActivity,
 
                                 onBackClick = {
-
                                     currentScreen =
                                         AppScreen.EMPLOYEES
                                 },
 
-
                                 onRoleClick = {
-
-                                    roleErrorText =
-                                        null
-
-
+                                    roleErrorText = null
                                     currentScreen =
                                         AppScreen.ROLE_SELECTION
+                                },
+
+                                onDeleteRoleClick = {
+                                    deleteRoleErrorText = null
+                                    currentScreen =
+                                        AppScreen.ROLE_DELETE_CONFIRM
                                 }
                             )
 
@@ -1457,11 +1614,6 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-
-
-                    // =====================================
-                    // ВЫБОР РОЛИ
-                    // =====================================
 
                     AppScreen.ROLE_SELECTION -> {
 
@@ -1630,11 +1782,6 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-
-
-                    // =====================================
-                    // ПОДТВЕРЖДЕНИЕ ЗАМЕНЫ
-                    // =====================================
 
                     AppScreen.ROLE_REPLACE_CONFIRM -> {
 
@@ -1875,8 +2022,6 @@ class MainActivity : ComponentActivity() {
                                                     )
                                                 }
 
-
-                                                // Локально тоже обновляем роль
                                                 scannedEmployeeDevice =
                                                     EmployeeDeviceResponse(
                                                         deviceId =
@@ -1885,8 +2030,6 @@ class MainActivity : ComponentActivity() {
                                                         role = null
                                                     )
 
-
-                                                // Обновляем список сотрудников
                                                 employees =
                                                     employees.filterNot {
                                                         it.deviceId ==
@@ -1937,11 +2080,6 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-
-
-                    // =====================================
-                    // УСПЕШНОЕ НАЗНАЧЕНИЕ
-                    // =====================================
 
                     AppScreen.ROLE_SUCCESS -> {
 
@@ -2037,12 +2175,6 @@ class MainActivity : ComponentActivity() {
                                 errorText =
                                     reportErrorText,
 
-
-                                // =====================================
-                                // НАЖАЛИ "СКАЧАТЬ ОТЧЁТ"
-                                // НА ГЛАВНОМ ЭКРАНЕ
-                                // =====================================
-
                                 onGenerateClick = {
 
                                     val activeSession =
@@ -2126,11 +2258,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
 
-
-                                // =====================================
-                                // СКАЧИВАЕМ УЖЕ ГОТОВЫЙ ФАЙЛ
-                                // =====================================
-
                                 onDownloadClick = {
 
                                     val bytes =
@@ -2174,11 +2301,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
 
-
-                                // =====================================
-                                // "ЗАКРЫТЬ"
-                                // =====================================
-
                                 onCloseClick = {
 
                                     reportScreenState =
@@ -2191,21 +2313,11 @@ class MainActivity : ComponentActivity() {
                                         null
                                 },
 
-
-                                // =====================================
-                                // СТРЕЛКА НАЗАД НА ЗАГРУЗКЕ
-                                // =====================================
-
                                 onLoadingBackClick = {
 
                                     reportScreenState =
                                         ReportScreenState.MAIN
                                 },
-
-
-                                // =====================================
-                                // НИЖНЯЯ НАВИГАЦИЯ
-                                // =====================================
 
                                 onChatsClick = {
 
@@ -2250,13 +2362,58 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+
+    }
+    private fun createNotificationChannel() {
+
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O
+        ) {
+
+            val channel =
+                NotificationChannel(
+                    NOTIFICATION_CHANNEL_ID,
+                    "Уведомления",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+
+                    description =
+                        "Уведомления приложения сотрудника"
+                }
+
+            val notificationManager =
+                getSystemService(
+                    NotificationManager::class.java
+                )
+
+
+            notificationManager.createNotificationChannel(
+                channel
+            )
+        }
+    }
+
+    private fun requestNotificationPermission() {
+
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+
+            requestPermissions(
+                arrayOf(
+                    Manifest.permission.POST_NOTIFICATIONS
+                ),
+                NOTIFICATION_PERMISSION_REQUEST_CODE
+            )
+        }
     }
 }
-
-
-// =========================================
-// MESSAGE → UI
-// =========================================
 
 private fun MessageResponse.toUi(
     employeeDeviceId: String
@@ -2307,11 +2464,6 @@ private fun MessageResponse.toUi(
             liveLocation?.endsAt
     )
 }
-
-
-// =========================================
-// СОХРАНЕНИЕ EXCEL
-// =========================================
 
 private suspend fun saveExcelReport(
     context: Context,
@@ -2474,11 +2626,6 @@ private fun Throwable.userMessage(
         "$prefix: ${message.orEmpty()}"
     }
 }
-
-
-// =========================================
-// ЭКРАН ОШИБКИ
-// =========================================
 
 @Composable
 private fun ConnectionError(

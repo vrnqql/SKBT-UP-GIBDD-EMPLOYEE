@@ -11,6 +11,7 @@ import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Streaming
 import retrofit2.http.DELETE
+import retrofit2.http.PUT
 
 interface ApiService {
 
@@ -40,9 +41,9 @@ interface ApiService {
         clientApp: String = "employee"
     ): EmployeeDevicesResponse
 
-    @GET("api/v1/employee/devices/{deviceId}/role")
+    @PUT("api/v1/employee/devices/{device_id}/role")
     suspend fun updateEmployeeRole(
-        @Path("deviceId")
+        @Path("device_id")
         deviceId: String,
 
         @Header("Authorization")
@@ -53,7 +54,7 @@ interface ApiService {
 
         @Body
         request: RoleRequest
-    ): RoleUpdateResponse
+    ): EmployeeDeviceResponse
 
     @GET("api/v1/employee/devices/{deviceId}")
     suspend fun employeeDevice(

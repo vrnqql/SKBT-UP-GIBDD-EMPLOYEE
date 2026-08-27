@@ -34,19 +34,22 @@ import androidx.compose.ui.unit.sp
 import com.example.gibdd_ochevidec.ui.components.AppBottomNavigation
 import com.example.gibdd_ochevidec.ui.components.MainTab
 import com.example.gibdd_ochevidec.ui.theme.Commissioner
+import androidx.compose.foundation.clickable
 
 
 data class NotificationItem(
     val id: String,
     val title: String,
     val text: String,
-    val time: String
+    val time: String,
+    val observerDeviceId: String? = null
 )
-
 
 @Composable
 fun NotificationsScreen(
     notifications: List<NotificationItem> = emptyList(),
+
+    onNotificationClick: (String) -> Unit = {},
 
     onChatsClick: () -> Unit = {},
     onEmployeesClick: () -> Unit = {},
@@ -106,7 +109,7 @@ fun NotificationsScreen(
                 ) {
 
                     Text(
-                        text = "Новых уведомлений пока нет",
+                        text = "Уведомлений пока нет",
                         fontFamily = Commissioner,
                         fontSize = 14.sp,
                         color = grayText,
@@ -145,7 +148,18 @@ fun NotificationsScreen(
                             notification = notification,
                             darkText = darkText,
                             grayText = grayText,
-                            blue = blue
+                            blue = blue,
+
+                            onClick = {
+                                notification
+                                    .observerDeviceId
+                                    ?.takeIf {
+                                        it.isNotBlank()
+                                    }
+                                    ?.let(
+                                        onNotificationClick
+                                    )
+                            }
                         )
                     }
                 }
@@ -178,13 +192,22 @@ private fun NotificationCard(
     notification: NotificationItem,
     darkText: Color,
     grayText: Color,
-    blue: Color
+    blue: Color,
+    onClick: () -> Unit = {}
 ) {
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(92.dp),
+            .height(92.dp)
+            .clickable(
+                enabled =
+                    !notification
+                        .observerDeviceId
+                        .isNullOrBlank()
+            ) {
+                onClick()
+            },
 
         shape = RoundedCornerShape(17.dp),
 
